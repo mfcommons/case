@@ -1,0 +1,10 @@
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineResource
+metadata:
+  name: mobile-app-registration-git-resource
+spec:
+  type: git
+  params:
+  - name: url
+    value: https://github.com/{user_name}/{repo_name}
+

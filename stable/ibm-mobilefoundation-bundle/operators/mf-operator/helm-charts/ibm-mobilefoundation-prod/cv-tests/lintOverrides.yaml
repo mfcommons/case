@@ -1,0 +1,49 @@
+# This yaml file contains options to ignore or reduce the severity specific cv
+# lint messages using regular expression to match on message text.
+#
+overrides:
+  - reason: "Image Pull Secret not required at present since we are pushing the images to local docker registry"
+    message: 'deploy/service_account.yaml: no imagePullSecrets defined, pods will not be able to pull namespace-scoped images from the local registry'
+    severity: WARNING
+    filenames:
+      - deploy/service_account.yaml
+    reduceTo: IGNORE
+  - reason: "PDB has been configured by default for all the MF components"
+    message: 'README.md: no preinstall steps found for PodDisruptionBudgets in Prerequisites of README'
+    severity: WARNING
+    filenames:
+      - README.md
+    reduceTo: IGNORE
+  - reason: "These will be considered for a future release and its default secret which can be overriden by the user if required"
+    rule: NoSecretResources
+  - reason: "This README can be ignored as we dont refer this any where and will be removed in future"
+    rule: NoICPReferences
+  - reason: "We dont have cv test running as we have helm based operator"
+    rule: HelmTestExists
+  - reason: "NA"
+    rule: NoIngressCollisions
+  - reason: "NA"
+    rule: UsedParametersAreDefined
+  - reason: "NA"
+    rule: NoSensitiveInfoInValues
+  - reason: "This will be considered in future release"
+    rule: UseEntitledRegistry
+  - reason: "NA"
+    rule: InstallTestExists
+  - reason: "NA"
+    rule: TranslatedLicenseLinkExists
+  - reason: "NA"
+    rule: AppTestExists
+  - reason: "NA"
+    rule: PodSecurityLinkInReadme
+  - reason: "To be considered for future release"
+    rule: MonitoringDashboardExists
+    severity: WARNING
+    reduceTo: IGNORE
+  - reason: "Conditional basis of apiVersion for ingress resource to support kubeversion < 1.14"
+    rule: NoDeprecatedAPIs
+  - reason: "To be considered for future release"
+    rule: HelpersHavePrefix
+    severity: REVIEW
+    reduceTo: IGNORE
+    

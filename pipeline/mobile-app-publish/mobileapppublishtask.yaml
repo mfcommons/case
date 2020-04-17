@@ -1,0 +1,127 @@
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+  name: application-center-upload
+spec:
+  inputs:
+    resources:
+    - name: git-source
+      type: git
+    - name: docker-image
+      type: image
+  steps:
+  - name: appcenter-config-read
+    image: stedolan/jq
+    command: 
+    - /bin/sh
+    args:
+    - -ce
+    - |
+      echo "Reading the config from the config file"
+      cat /workspace/git-source/pipelineconfig.json | jq .env_choice > envchoice
+      envchoice=$(head -n 1 envchoice)
+      envchoice="${envchoice%\"}"
+      envchoice="${envchoice#\"}"
+      echo "$envchoice"
+      cat /workspace/git-source/pipelineconfig.json | jq .$envchoice.hostname > hostname
+      cat /workspace/git-source/pipelineconfig.json | jq .$envchoice.port > port
+      cat /workspace/git-source/pipelineconfig.json | jq .$envchoice.servercred > servercred
+      cat /workspace/git-source/pipelineconfig.json | jq .userName > userName
+      cat /workspace/git-source/pipelineconfig.json | jq .repoName > repoName
+
+  - name: appcenter-upload
+    image: gempesaw/curl-jq
+    command: 
+    - /bin/sh
+    args:
+    - -ce
+    - |
+      echo "Getting the input from the previous command"
+      hostname=$(head -n 1 hostname)
+      hostname="${hostname%\"}"
+      hostname="${hostname#\"}"
+      echo "$hostname"
+      port=$(head -n 1 port)
+      port="${port%\"}"
+      port="${port#\"}"
+      echo "$port"
+      servercred=$(head -n 1 servercred)
+      servercred="${servercred%\"}"
+      servercred="${servercred#\"}"
+      repoName=$(head -n 1 repoName)
+      repoName="${repoName%\"}"
+      repoName="${repoName#\"}"
+      userName=$(head -n 1 userName)
+      userName="${userName%\"}"
+      userName="${userName#\"}"
+      echo "Running the command to uploaded the App"
+
+      curl -X GET "https://api.github.com/repos/${userName}/${repoName}/releases/latest" -o release-output.json
+      downloadUrl=$(jq -r '.assets[].browser_download_url' /workspace/release-output.json)
+
+      fileName=${repoName}
+      
+      fileType="ipa"
+
+      case $downloadUrl in
+          *ipa* ) curl -L $downloadUrl > ${repoName}.ipa;
+                  fileName=${repoName}.ipa;
+                  fileType=ipa;
+          ;;
+          *apk* ) curl -L $downloadUrl > ${repoName}.apk;
+                  fileName=${repoName}.apk;
+                  fileType=apk;
+          ;;
+          * ) echo "Error...";;
+      esac
+
+      curl -X POST "http://${hostname}:${port}/appcenterconsole/services/service/desktop/upload/filetype/${fileType}" -H "Content-Type: multipart/form-data" --user "${servercred}" -F "filename=@/workspace/${fileName}" -o publishoutput.json
+
+      cat /workspace/publishoutput.json
+
+      
+  - name: buildinginputs
+    image: node
+    command:
+    - /bin/sh
+    args:
+    - -ce
+    - |
+      echo "Running the nodejs to read the config file"
+      fileType=apk
+      repoName=$(head -n 1 repoName)
+      repoName="${repoName%\"}"
+      repoName="${repoName#\"}"
+      chmod +x /workspace/git-source/publishdata.sh
+      if [ -f /workspace/${repoName}.apk ]; then
+        fileType=apk
+      else
+        fileType=ipa
+      fi
+      /workspace/git-source/publishdata.sh publishoutput.json $fileType
+
+  - name: appcenter-reg
+    image: byrnedo/alpine-curl
+    command: 
+    - /bin/sh
+    args:
+    - -ce
+    - |
+      echo "Getting the input from the previous command"
+      hostname=$(head -n 1 hostname)
+      hostname="${hostname%\"}"
+      hostname="${hostname#\"}"
+      echo "$hostname"
+      port=$(head -n 1 port)
+      port="${port%\"}"
+      port="${port#\"}"
+      echo "$port"
+      servercred=$(head -n 1 servercred)
+      servercred="${servercred%\"}"
+      servercred="${servercred#\"}"
+      echo "Running the command to Register the uploaded App"
+      cat /workspace/out_publishoutput.json
+      echo "http://${hostname}:${port}/appcenterconsole/services/service/desktop/application"
+      curl -X POST "http://${hostname}:${port}/appcenterconsole/services/service/desktop/application" -H "Content-Type: application/json" --user "${servercred}" -d "@out_publishoutput.json"
+
+

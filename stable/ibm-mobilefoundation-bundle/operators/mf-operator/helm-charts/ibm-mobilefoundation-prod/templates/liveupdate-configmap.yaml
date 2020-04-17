@@ -1,0 +1,31 @@
+###############################################################################
+# Licensed Materials - Property of IBM.
+# Copyright IBM Corporation 2018. All Rights Reserved.
+# U.S. Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+# Contributors:
+# IBM Corporation - initial API and implementation
+###############################################################################
+{{ if .Values.mfpserver.enabled -}}
+{{- if .Values.mfpliveupdate.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "mfp.liveupdate-configmap.fullname" . }}
+  labels:
+    app.kubernetes.io/name: {{ template "mfp.liveupdate.fullname" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    release: {{ quote .Release.Name }}
+    app.kubernetes.io/instance: "{{ .Release.Name }}" 
+    app.kubernetes.io/managed-by: {{ quote .Release.Service }}
+data:
+  SSL_CONNECTION: "{{ .Values.mfpliveupdate.db.ssl }}"
+  MFPF_LIVEUPDATE_DB_TYPE: {{ .Values.mfpliveupdate.db.type | lower | quote }}
+  MFPF_LIVEUPDATE_DB_HOST: {{ .Values.mfpliveupdate.db.host }}
+  MFPF_LIVEUPDATE_DB_PORT: "{{ .Values.mfpliveupdate.db.port }}"
+  MFPF_LIVEUPDATE_DB_NAME: {{ .Values.mfpliveupdate.db.name }}
+  MFPF_LIVEUPDATE_DB_SCHEMA: {{ .Values.mfpliveupdate.db.schema | upper }}
+  MFPF_RUNTIME_INTERNAL_ENDPOINT: "${env.MFPF_SERVER_PROTOCOL}://${env.MFPF_RUNTIME_SVC_NAME}:${env.MFPF_SERVER_PORT}/mfp"
+{{- end }}
+{{- end }}

@@ -1,0 +1,16 @@
+overrides:
+  - reason: Sample README -- FIXME 
+    rule: NoInternalURLs
+    reduceTo: WARNING 
+  - reason: App tests need to be developed -- FIXME
+    rule: AppTestExists
+    reduceTo: WARNING
+  - reason: Used Images in Manifest -- FIXME
+    rule: UsedImagesInManifest
+    reduceTo: WARNING
+  - reason: Lebels not defined -- FIXME
+    rule: RequiredMetadataLabelsDefined
+    reduceTo: WARNING
+  - reason: parameter case -- FIXME
+    rule: ParameterIsCamelCase
+    reduceTo: IGNORE

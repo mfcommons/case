@@ -1,0 +1,6 @@
+---
+- version: v1
+  group: mf.ibm.com
+  kind: MFOperator
+  chart: /opt/helm/helm-charts/ibm-mobilefoundation-prod
+

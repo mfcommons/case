@@ -1,0 +1,9 @@
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineResource
+metadata:
+  name: mobile-app-build-ios-image-resource
+spec:
+  type: image
+  params:
+    - name: url
+      value: <image-repo-url>:<PORT>/<MFOS_PROJECT>/<IMAGENAME>

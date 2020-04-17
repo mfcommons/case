@@ -1,0 +1,42 @@
+###############################################################################
+# Licensed Materials - Property of IBM.
+# Copyright IBM Corporation 2018. All Rights Reserved.
+# U.S. Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+# Contributors:
+# IBM Corporation - initial API and implementation
+###############################################################################
+{{ if .Values.mfpanalytics.enabled -}}
+{{ if .Values.mfpanalytics_recvr.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    prometheus.io/port: '9443'
+    mfpfanalytics-recvr: "true"
+  name: {{ template "mfp.analytics-recvr.fullname" . }}
+  labels:
+    app.kubernetes.io/name: {{ template "mfp.analytics-recvr.fullname" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: "{{ .Release.Name }}"
+    release: "{{ .Release.Name }}"
+    app.kubernetes.io/managed-by: "{{ .Release.Service }}"
+    run: {{ template "mfp.analytics-recvr.fullname" . }}
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9080
+    targetPort: 9080
+    protocol: TCP
+    name: analytics-http
+  - port: 9443
+    targetPort: 9443
+    protocol: TCP
+    name: analytics-https
+  selector:
+    run: {{ template "mfp.analytics-recvr.fullname" . }}
+    app.kubernetes.io/name: {{ template "mfp.analytics-recvr.fullname" . }}
+    release: {{ .Release.Name }}
+{{- end }}
+{{- end }}

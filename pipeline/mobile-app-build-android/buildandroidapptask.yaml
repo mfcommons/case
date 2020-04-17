@@ -1,0 +1,131 @@
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+  name: mobile-app-build-android-task
+spec:
+
+  inputs:
+    resources:
+    - name: git-source
+      type: git
+    - name: docker-image
+      type: image
+
+  steps:
+
+    - name: read-config
+      image: stedolan/jq
+      command: ['/bin/sh']
+      args:
+      - -ce
+      - |
+        echo "Reading from app-build config file"
+        cat /workspace/git-source/pipelineconfig.json | jq .userName > userName
+        cat /workspace/git-source/pipelineconfig.json | jq .repoName > repoName
+
+    - name: ionic-add-and-build
+      image: beevelop/ionic
+      command: ['/bin/sh']
+      args:
+      - -ce
+      - |
+        yes | $ANDROID_HOME/tools/bin/sdkmanager "build-tools;28.0.3"
+        projectLocation=/workspace/git-source
+        cd "$projectLocation"
+        echo "Checking if the cloned repo is an ionic project"
+        if [ -f 'ionic/ionic.config.json' ]; then
+          cd ionic
+          echo "Found ionic DAB project. Adding android platform"
+          npm i -g --unsafe-perm cordova-res
+          ionic cordova platform add android --verbose
+          npm i --unsafe-perm
+          if [ -f 'app-build.json' ]; then
+            ionic cordova build android --prod --release --buildConfig=app-build.json
+          else
+            ionic cordova build android --prod --release
+          fi
+          ls platforms/android/app/build/outputs/apk/release
+        elif [ -f 'ionic.config.json' ]; then
+          echo "Found generic ionic project. Adding android platform"
+          npm i -g --unsafe-perm cordova-res
+          ionic cordova platform add android --verbose
+          npm i --unsafe-perm
+          if [ -f 'app-build.json' ]; then
+            ionic cordova build android --prod --release --buildConfig=app-build.json
+          else
+            ionic cordova build android --prod --release
+          fi
+          ls platforms/android/app/build/outputs/apk/release
+        else
+          echo "Not an ionic project"
+        fi
+
+    - name: build-android
+      image: shepeliev/android-sdk
+      command: ['/bin/sh']
+      args:
+      - -ce
+      - |
+        projectLocation=/workspace/git-source
+        cd "$projectLocation"
+        if [ -f 'gradlew' ]; then
+          echo "Building native android project"
+          ./gradlew assembleRelease
+        else
+          echo "Not a native android project"
+        fi
+
+    - name: create-release
+      image: jimdo/github-release
+      env:
+        - name: "GITHUB_TOKEN"
+          value: "{GITHUB_TOKEN}"
+      command: ['/bin/bash']
+      args:
+      - -ce
+      - |
+        releaseNumber=1.0
+        repoName=$(head -n 1 repoName)
+        repoName="${repoName%\"}"
+        repoName="${repoName#\"}"
+        userName=$(head -n 1 userName)
+        userName="${userName%\"}"
+        userName="${userName#\"}"
+        if [[ `github-release info -u $userName -r $repoName` ]]; then
+          github-release info -u $userName -r $repoName >> /workspace/releasedata
+          chmod +x /workspace/releasedata
+          line=$(sed -n '2p' < /workspace/releasedata)
+          latestRelease=$(echo "$line" | cut -d ' ' -f2)
+          newRelease=$(echo "$latestRelease" | cut -d '.' -f1)
+          releaseNumber=$(echo "$(($newRelease + 1)).0")
+        else
+           releaseNumber="1.0"
+        fi
+        github-release release --user $userName --repo $repoName --tag $releaseNumber --name "Release $releaseNumber"
+
+        echo "Created a release with release number ${releaseNumber}"
+
+        projectLocation=/workspace/git-source
+        cd "$projectLocation"
+        if [ -d 'platforms' ]; then
+          if [ -f 'platforms/android/app/build/outputs/apk/release/app-release-unsigned.apk' ]; then
+            apkLocation=platforms/android/app/build/outputs/apk/release/app-release-unsigned.apk
+          else
+            apkLocation=platforms/android/app/build/outputs/apk/release/app-release.apk
+          fi
+        elif [ -d 'ionic/platforms' ]; then
+          if [ -f 'ionic/platforms/android/app/build/outputs/apk/release/app-release-unsigned.apk' ]; then
+            apkLocation=ionic/platforms/android/app/build/outputs/apk/release/app-release-unsigned.apk
+          else
+            apkLocation=ionic/platforms/android/app/build/outputs/apk/release/app-release.apk
+          fi
+        else
+          if [ -f 'app/build/outputs/apk/release/app-release-unsigned.apk' ]; then
+            apkLocation=app/build/outputs/apk/release/app-release-unsigned.apk
+          else
+            apkLocation=app/build/outputs/apk/release/app-release.apk
+          fi
+        fi
+
+        
+        github-release upload --user $userName --repo $repoName --tag $releaseNumber --name "($repoName).apk" --file $apkLocation

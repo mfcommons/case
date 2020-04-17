@@ -1,0 +1,29 @@
+{{ if .Values.mfpserver.enabled -}}
+{{ if .Values.mfpliveupdate.enabled -}}
+{{- if .Values.mfpliveupdate.pdb.enabled -}}
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ template "mfp.liveupdate.fullname" . }}
+  annotations:
+    "helm.sh/hook": "pre-rollback, pre-upgrade, pre-install"
+    "helm.sh/hook-delete-policy": "before-hook-creation"
+  labels:
+    app.kubernetes.io/name: {{ template "mfp.liveupdate.fullname" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    release: {{ quote .Release.Name }}
+    app.kubernetes.io/instance: "{{ .Release.Name }}" 
+    app.kubernetes.io/managed-by: {{ quote .Release.Service }}
+    run: {{ template "mfp.liveupdate.fullname" . }}
+spec:
+  minAvailable: {{ .Values.mfpliveupdate.pdb.min }}
+  selector:
+    matchLabels:
+      run: {{ template "mfp.liveupdate.fullname" . }}
+      app.kubernetes.io/name: {{ template "mfp.liveupdate.fullname" . }}
+      helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+      release: "{{ .Release.Name }}"
+      app.kubernetes.io/managed-by: "{{ .Release.Service }}"
+{{- end -}}
+{{- end -}}
+{{- end }}

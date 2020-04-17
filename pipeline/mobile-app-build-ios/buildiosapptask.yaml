@@ -1,0 +1,181 @@
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+  name: mobile-app-build-ios-task
+spec:
+
+  inputs:
+    resources:
+    - name: git-source
+      type: git
+    - name: docker-image
+      type: image
+
+  steps:
+
+    - name: read-config
+      image: stedolan/jq
+      command: ['/bin/sh']
+      args:
+      - -ce
+      - |
+        echo 'Reading from app-build config file'
+        cat /workspace/git-source/pipelineconfig.json | jq .userName > userName
+        cat /workspace/git-source/pipelineconfig.json | jq .repoName > repoName
+        cat /workspace/git-source/pipelineconfig.json | jq .ios.host > host
+        cat /workspace/git-source/pipelineconfig.json | jq .ios.botId > botId
+
+    - name: build-ios-app
+      image: byrnedo/alpine-curl
+      command: ['/bin/sh']
+      args:
+      - -ce
+      - |
+        host=$(head -n 1 host)
+        host="${host%\"}"
+        host="${host#\"}"
+
+        botId=$(head -n 1 botId)
+        botId="${botId%\"}"
+        botId="${botId#\"}"
+
+        echo "$host"
+        echo "$botId"
+
+        curl -k -X POST "https://${host}:20343/api/bots/${botId}/integrations" -o /workspace/postoutput.json
+
+    - name: read-output-json
+      image: stedolan/jq
+      command: ['/bin/sh']
+      args:
+      - -ce
+      - |
+        cat /workspace/postoutput.json | jq ._id > integrationId
+        cat /workspace/postoutput.json | jq .bot.name > botName
+        cat /workspace/postoutput.json | jq .bot.configuration.schemeName > schemeName
+        cat /workspace/postoutput.json | jq .bot.integration_counter > integrationCounter
+
+
+        integrationId=$(head -n 1 integrationId)
+        integrationId="${integrationId%\"}"
+        integrationId="${integrationId#\"}"
+
+        botName=$(head -n 1 botName)
+        botName="${botName%\"}"
+        botName="${botName#\"}"
+
+        schemeName=$(head -n 1 schemeName)
+        schemeName="${schemeName%\"}"
+        schemeName="${schemeName#\"}"
+
+        integrationCounter=$(head -n 1 integrationCounter)
+        integrationCounter="${integrationCounter%\"}"
+        integrationCounter="${integrationCounter#\"}"
+
+        echo "integrationId $integrationId"
+
+        echo "botName $botName"
+
+        echo "schemeName $schemeName"
+
+        echo "integrationCounter $integrationCounter"
+
+    - name: retrieve-integration
+      image: gempesaw/curl-jq
+      command: ['/bin/sh']
+      args:
+      - -ce
+      - |
+        integrationId=$(head -n 1 integrationId)
+        integrationId="${integrationId%\"}"
+        integrationId="${integrationId#\"}"
+
+        host=$(head -n 1 host)
+        host="${host%\"}"
+        host="${host#\"}"
+
+        echo "integration $integrationId"
+
+        isFailed='false'
+        while true; do
+          curl -k -X GET "https://${host}:20343/api/integrations/${integrationId}" --output /workspace/integration_output.json
+          result=$(jq -r '.result' /workspace/integration_output.json)
+          echo "result $result"
+          if [ $result == 'succeeded' ]; then
+            echo "succeeded"
+            sleep 15
+            break
+          elif [ '$result' == 'build-failed' ]; then
+            isFailed='true'
+            break
+          fi
+        done
+
+        botId=$(head -n 1 botId)
+        botId="${botId%\"}"
+        botId="${botId#\"}"
+
+        botName=$(head -n 1 botName)
+        botName="${botName%\"}"
+        botName="${botName#\"}"
+
+        integrationCounter=$(head -n 1 integrationCounter)
+        integrationCounter="${integrationCounter%\"}"
+        integrationCounter="${integrationCounter#\"}"
+
+        schemeName=$(head -n 1 schemeName)
+        schemeName="${schemeName%\"}"
+        schemeName="${schemeName#\"}"
+
+        if [ $isFailed == 'false' ]; then
+          echo "Build Passed"
+          echo "https://${host}:20343/api/assets/${botId}-${botName}/${integrationCounter}/${schemeName}.ipa"
+          curl -k -o /workspace/${schemeName}.ipa "https://${host}:20343/api/assets/${botId}-${botName}/${integrationCounter}/${schemeName}.ipa"
+        else
+          echo "Build Failed"        
+        fi
+
+    - name: create-release
+      image: jimdo/github-release
+      env:
+        - name: "GITHUB_TOKEN"
+          value: "{GITHUB_TOKEN}"
+      command: ['/bin/bash']
+      args:
+      - -ce
+      - |
+        schemeName=$(head -n 1 schemeName)
+        schemeName="${schemeName%\"}"
+        schemeName="${schemeName#\"}"
+
+        if [ -f /workspace/${schemeName}.ipa ]; then
+
+          releaseNumber=1.0
+          repoName=$(head -n 1 repoName)
+          repoName="${repoName%\"}"
+          repoName="${repoName#\"}"
+          userName=$(head -n 1 userName)
+          userName="${userName%\"}"
+          userName="${userName#\"}"
+          if [[ `github-release info -u $userName -r $repoName` ]]; then
+            github-release info -u $userName -r $repoName >> /workspace/releasedata
+            chmod +x /workspace/releasedata
+            line=$(sed -n '2p' < /workspace/releasedata)
+            latestRelease=$(echo "$line" | cut -d ' ' -f2)
+            newRelease=$(echo "$latestRelease" | cut -d '.' -f1)
+            releaseNumber=$(echo "$(($newRelease + 1)).0")
+          else
+            releaseNumber="1.0"
+          fi
+          github-release release --user $userName --repo $repoName --tag $releaseNumber --name "Release $releaseNumber"
+
+          echo "Created release with release number $releaseNumber"
+
+          schemeName=$(head -n 1 schemeName)
+          schemeName="${schemeName%\"}"
+          schemeName="${schemeName#\"}"
+
+          ipaLocation=/workspace/${schemeName}.ipa
+
+          github-release upload --user $userName --repo $repoName --tag $releaseNumber --name "($repoName).ipa" --file /workspace/${schemeName}.ipa
+        fi

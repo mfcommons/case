@@ -1,0 +1,187 @@
+###############################################################################
+# Licensed Materials - Property of IBM.
+# Copyright IBM Corporation 2018. All Rights Reserved.
+# U.S. Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+# Contributors:
+# IBM Corporation - initial API and implementation
+###############################################################################
+{{ if .Values.mfpanalytics.enabled -}}
+{{ if .Values.mfpanalytics_recvr.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "mfp.analytics-recvr.fullname" . }}
+  labels:
+    app.kubernetes.io/name: {{ template "mfp.analytics-recvr.fullname" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: "{{ .Release.Name }}"
+    release: "{{ .Release.Name }}"
+    heritage: {{ .Release.Service }}
+    component: analytics-recvr
+    app.kubernetes.io/managed-by: "{{ .Release.Service }}"
+    run: {{ template "mfp.analytics-recvr.fullname" . }}
+spec:
+  selector:
+    matchLabels:
+      release: {{ .Release.Name }}
+      run: {{ template "mfp.analytics-recvr.fullname" . }}
+  {{- if not .Values.mfpanalytics_recvr.autoscaling.enabled }}
+  replicas: {{ .Values.mfpanalytics_recvr.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+     maxUnavailable: 25%
+     maxSurge: 25%
+  {{- end }}
+  template:
+    metadata:
+      annotations:
+        productName: {{ template "ibm-mobilefoundation.productName" . }}
+        productID: {{ template "ibm-mobilefoundation.productID" . }}
+        productVersion: {{ template "ibm-mobilefoundation.productVersion" . }}
+      labels:
+        run: {{ template "mfp.analytics-recvr.fullname" . }}
+        app.kubernetes.io/name: {{ template "mfp.analytics-recvr.fullname" . }}
+        helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+        release: "{{ .Release.Name }}"
+        heritage: {{ .Release.Service }}
+        component: analytics-recvr
+        app.kubernetes.io/instance: "{{ .Release.Name }}"
+        app.kubernetes.io/managed-by: "{{ .Release.Service }}"
+    spec:
+      {{- if .Values.global.image.pullSecret }}
+      imagePullSecrets:
+        - name: {{ .Values.global.image.pullSecret }}
+      {{- end }}
+      hostNetwork: false
+      hostPID: false
+      hostIPC: false
+      serviceAccountName: mf-operator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      affinity:
+        {{- include "nodeAffinity" . | indent 6 }}
+      {{/* Prefer horizontal scaling */}}
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values:
+                  - {{ template "mfp.analytics-recvr.fullname" . }}
+                - key: release
+                  operator: In
+                  values:
+                  - {{ .Release.Name | quote }}
+              topologyKey: kubernetes.io/hostname
+      volumes:
+{{- if .Values.mfpanalytics_recvr.customConfiguration }}
+        - name: mfpanalytics-recvr-customconfig
+          configMap:
+            name: {{ .Values.mfpanalytics_recvr.customConfiguration }}
+{{- end }}
+{{- if .Values.mfpanalytics.keystoreSecret }}
+        - name: mfpf-certs
+          secret:
+            secretName: {{ .Values.mfpanalytics.keystoreSecret }}
+{{- end }}
+      containers:
+      - name: {{ template "mfp.analytics-recvr.fullname" . }}
+        readinessProbe:
+          httpGet:
+            path: /analytics-receiver/rest/data/health
+            port: 9080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 10
+          successThreshold: 1
+          failureThreshold: 10
+        livenessProbe:
+          tcpSocket:
+            port: 9080
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 10
+          successThreshold: 1
+          failureThreshold: 10
+        image: "{{ .Values.mfpanalytics_recvr.repository }}:{{ .Values.mfpanalytics_recvr.tag }}"
+        imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+        securityContext:
+          privileged: false
+          readOnlyRootFilesystem: false
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+        env:
+          - name: WLP_LOGGING_CONSOLE_FORMAT
+            value: "basic"
+          - name: WLP_LOGGING_CONSOLE_LOGLEVEL
+            value: "info"
+          - name : WLP_LOGGING_CONSOLE_SOURCE
+            value: "message,trace,accessLog,ffdc"
+          - name: MFPF_ANALYTICS_SVC_NAME
+            value: {{ template "mfp.analytics.fullname" . }}
+{{- if .Values.global.https }}
+          - name: MFPF_ANALYTICS_PROTOCOL
+            value: "https"
+          - name: MFPF_ANALYTICS_PORT
+            value: "9443"
+{{- else }}
+          - name: MFPF_ANALYTICS_PROTOCOL
+            value: "http"
+          - name: MFPF_ANALYTICS_PORT
+            value: "9080"
+{{- end }}
+{{- if .Values.mfpanalytics.keystoreSecret }}
+          - name: KEYSTORE_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.mfpanalytics_recvr.keystoreSecret }}
+                key: KEYSTORE_PASSWORD
+          - name: TRUSTSTORE_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.mfpanalytics_recvr.keystoreSecret }}
+                key: TRUSTSTORE_PASSWORD
+{{- end }}
+        envFrom:
+{{- if .Values.mfpanalytics.consoleSecret }}
+        - secretRef:
+            name: {{ .Values.mfpanalytics.consoleSecret }}
+{{- else}}
+        - secretRef:
+            name: mfpanalytics-consolesecret
+{{- end }}
+        ports:
+          - containerPort: 9080
+          - containerPort: 9443
+        volumeMounts:
+{{- if .Values.mfpanalytics_recvr.customConfiguration }}
+          - name: mfpanalytics-recvr-customconfig
+            readOnly: true
+            mountPath: /opt/ibm/wlp/usr/servers/mfpf-analytics-recvr/configDropins/overrides
+{{- end }}
+{{- if .Values.mfpanalytics_recvr.keystoreSecret }}
+          - name: mfpf-certs
+            readOnly: true
+            mountPath: /opt/ibm/wlp/usr/servers/mfpf-analytics-recvr/resources/security/keystore.jks
+            subPath: keystore.jks
+          - name: mfpf-certs
+            readOnly: true
+            mountPath: /opt/ibm/wlp/usr/servers/mfpf-analytics-recvr/resources/security/truststore.jks
+            subPath: truststore.jks
+{{- end }}  	        
+        resources:
+{{ toYaml .Values.mfpanalytics_recvr.resources | indent 10 }}
+{{- end }}
+{{- end }}

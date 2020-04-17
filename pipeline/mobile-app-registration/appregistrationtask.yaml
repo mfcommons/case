@@ -1,0 +1,50 @@
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+  name: mobile-app-registration-task
+spec:
+  inputs:
+    resources:
+    - name: git-source
+      type: git
+    - name: docker-image
+      type: image
+  steps:
+  - name: mfp-config-read
+    image: stedolan/jq
+    command: 
+    - /bin/sh
+    args:
+    - -ce
+    - |
+      echo "Reading the config from the config file"
+      cat /workspace/git-source/pipelineconfig.json | jq .env_choice > envchoice
+      envchoice=$(head -n 1 envchoice)
+      envchoice="${envchoice%\"}"
+      envchoice="${envchoice#\"}"
+      echo "$envchoice"
+      cat /workspace/git-source/pipelineconfig.json | jq .$envchoice.hostname > hostname
+      cat /workspace/git-source/pipelineconfig.json | jq .$envchoice.port > port
+      cat /workspace/git-source/pipelineconfig.json | jq .$envchoice.servercred > servercred
+  - name: mfp-appreg
+    image: byrnedo/alpine-curl
+    command: 
+    - /bin/sh
+    args:
+    - -ce
+    - |
+      echo "Getting the input from the previous command"
+      hostname=$(head -n 1 hostname)
+      hostname="${hostname%\"}"
+      hostname="${hostname#\"}"
+      echo "$hostname"
+      port=$(head -n 1 port)
+      port="${port%\"}"
+      port="${port#\"}"
+      echo "$port"
+      servercred=$(head -n 1 servercred)
+      servercred="${servercred%\"}"
+      servercred="${servercred#\"}"
+      curl -X POST "http://${hostname}:${port}/mfpadmin/management-apis/2.0/runtimes/mfp/applications?async=false&locale=de_DE" -H "Content-Type: application/json" --user "${servercred}" -H "cache-control: no-cache" -d "@/workspace/git-source/ibm/mobile_config/config.json"
+      
+

@@ -1,0 +1,20 @@
+apiVersion: tekton.dev/v1alpha1
+kind: Pipeline
+metadata:
+  name: mobile-app-registration-pipeline
+spec:
+  resources:
+  - name: git-source
+    type: git
+  - name: docker-image
+    type: image
+  tasks:
+  - name: appreg-task-list
+    taskRef:
+      name: mobile-app-registration-task
+    resources:
+        inputs:
+        - name: git-source
+          resource: git-source
+        - name: docker-image
+          resource: docker-image
